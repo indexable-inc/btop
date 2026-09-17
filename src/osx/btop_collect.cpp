@@ -1796,6 +1796,10 @@ namespace Proc {
 			}
 			uint64_t cpu_t = 0;
 
+			//? Pad the buffer: processes spawned between the size query and the fetch
+			//? make the kernel silently truncate the tail of the list (where pid 1
+			//? lives), which would orphan every direct child of launchd in the tree.
+			size += 32 * sizeof(kinfo_proc);
 			std::unique_ptr<kinfo_proc[]> processes(new kinfo_proc[size / sizeof(kinfo_proc)]);
 			if (sysctl(mib, 4, processes.get(), &size, nullptr, 0) == 0) {
 				size_t count = size / sizeof(struct kinfo_proc);
@@ -1858,7 +1862,6 @@ namespace Proc {
 							new_proc.cmd.resize(1000);
 							new_proc.cmd.shrink_to_fit();
 						}
-						new_proc.ppid = kproc.kp_eproc.e_ppid;
 						new_proc.cpu_s = kproc.kp_proc.p_starttime.tv_sec * 1'000'000 + kproc.kp_proc.p_starttime.tv_usec;
 						struct passwd *pwd = getpwuid(kproc.kp_eproc.e_ucred.cr_uid);
                         if (pwd != nullptr) {
@@ -1869,6 +1872,11 @@ namespace Proc {
 					}
 					new_proc.p_nice = kproc.kp_proc.p_nice;
 					new_proc.state = kproc.kp_proc.p_stat;
+					//? Refresh parent pid every tick: macOS reparents orphans to launchd (pid 1),
+					//? and a cached ppid pointing at a dead process would otherwise leave the
+					//? process detached at the tree root forever (ppid zeroed by the
+					//? vanished-parent sweep and never re-read).
+					new_proc.ppid = kproc.kp_eproc.e_ppid;
 
 					//? Get threads, mem and cpu usage
 					struct proc_taskinfo pti{};
