@@ -1884,16 +1884,29 @@ namespace Proc {
 				if (item_fit >= 8) out += cjust("Nice:", item_width);
 
 
-				//? Command line
+				//? Command line (+ working directory on the last row when it fits)
 				for (int i = 0; const auto& l : {'C', 'M', 'D'})
 				out += Mv::to(d_y + 5 + i++, d_x + 1) + l;
 
 				out += Theme::c("main_fg") + Fx::ub;
 				const auto san_cmd = replace_ascii_control(detailed.entry.cmd);
 				const int cmd_size = ulen(san_cmd, true);
-				for (int num_lines = min(3, (int)ceil((double)cmd_size / (d_width - 5))), i = 0; i < num_lines; i++) {
-					out += Mv::to(d_y + 5 + (num_lines == 1 ? 1 : i), d_x + 3)
+				const auto san_cwd = replace_ascii_control(detailed.entry.cwd);
+				//? Reserve the bottom row for the cwd only when the command needs <= 2 rows,
+				//? so a long command is never truncated to make room for it.
+				const int cmd_rows = max(1, (int)ceil((double)cmd_size / (d_width - 5)));
+				const bool show_cwd = not san_cwd.empty() and cmd_rows <= 2;
+				const int cmd_lines = min(show_cwd ? 2 : 3, cmd_rows);
+				for (int i = 0; i < cmd_lines; i++) {
+					out += Mv::to(d_y + 5 + (not show_cwd and cmd_lines == 1 ? 1 : i), d_x + 3)
 						+ cjust(luresize(san_cmd, cmd_size - (d_width - 5) * i, true), d_width - 5, true, true);
+				}
+				if (show_cwd) {
+					//? Working directory directly under the command, with a dim label.
+					const string cwd_label = "cwd ";
+					const int cwd_size = ulen(san_cwd, true);
+					out += Mv::to(d_y + 5 + cmd_lines, d_x + 3) + Theme::c("title") + Fx::b + cwd_label + Theme::c("main_fg") + Fx::ub
+						+ cjust(luresize(san_cwd, cwd_size, true), d_width - 5 - ulen(cwd_label), true, true);
 				}
 
 			}
