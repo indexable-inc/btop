@@ -3348,6 +3348,11 @@ namespace Proc {
 					pread.close();
 					if (not new_proc.cmd.empty()) new_proc.cmd.pop_back();
 
+					//? Get the real working directory (kernel cwd, not the $PWD env var)
+					std::error_code cwd_ec;
+					if (auto cwd_path = fs::read_symlink(d.path() / "cwd", cwd_ec); not cwd_ec)
+						new_proc.cwd = cwd_path.string();
+
 					pread.open(d.path() / "status");
 					if (not pread.good()) continue;
 					string uid;

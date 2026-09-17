@@ -1862,6 +1862,10 @@ namespace Proc {
 							new_proc.cmd.resize(1000);
 							new_proc.cmd.shrink_to_fit();
 						}
+						//? Get the real working directory (kernel cwd, not the $PWD env var)
+						struct proc_vnodepathinfo vpi;
+						if (proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &vpi, sizeof(vpi)) == sizeof(vpi))
+							new_proc.cwd = vpi.pvi_cdir.vip_path;
 						new_proc.cpu_s = kproc.kp_proc.p_starttime.tv_sec * 1'000'000 + kproc.kp_proc.p_starttime.tv_usec;
 						struct passwd *pwd = getpwuid(kproc.kp_eproc.e_ucred.cr_uid);
                         if (pwd != nullptr) {
