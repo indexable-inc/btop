@@ -1716,6 +1716,8 @@ namespace Proc {
 		auto mem_bytes = Config::getB("proc_mem_bytes");
 		auto vim_keys = Config::getB("vim_keys");
 		auto show_graphs = Config::getB("proc_cpu_graphs");
+		const auto& sorting = Config::getS("proc_sorting");
+		const bool io_sorting = sorting == "io read" or sorting == "io write" or sorting == "io total";
 		const auto pause_proc_list = Config::getB("pause_proc_list");
 		auto follow_process = Config::getB("follow_process");
 		int followed_pid = Config::getI("followed_pid");
@@ -1809,7 +1811,7 @@ namespace Proc {
 			prog_size = (width > 70 ? 16 : ( width > 55 ? 8 : width - user_size - thread_size - 33));
 			cmd_size = (width > 55 ? width - prog_size - user_size - thread_size - 33 : -1);
 			tree_size = width - user_size - thread_size - 23;
-			if (not show_graphs) {
+			if (not show_graphs and not io_sorting) {
 				cmd_size += 5;
 				tree_size += 5;
 			}
@@ -1913,7 +1915,6 @@ namespace Proc {
 			}
 
 			//? pause, per-core, reverse, tree and sorting
-			const auto& sorting = Config::getS("proc_sorting");
 			const int sort_len = sorting.size();
 			const int sort_pos = x + width - sort_len - 8;
 
@@ -1992,7 +1993,7 @@ namespace Proc {
 			out += (thread_size > 0 ? Mv::l(4) + "Threads: " : "")
 					+ ljust("User:", user_size) + ' '
 					+ rjust((mem_bytes ? "MemB" : "Mem%"), 5) + ' '
-					+ rjust("Cpu%", (show_graphs ? 10 : 5)) + Fx::ub;
+					+ rjust(io_sorting ? "IO/s" : "Cpu%", (show_graphs or io_sorting ? 10 : 5)) + Fx::ub;
 		}
 		//* End of redraw block
 
@@ -2153,6 +2154,16 @@ namespace Proc {
 				mem_str += '%';
 			}
 
+			string io_str;
+			if (io_sorting) {
+				const auto io_bytes = sorting == "io read"
+					? p.io_read_rate
+					: sorting == "io write"
+						? p.io_write_rate
+						: p.io_read_rate + p.io_write_rate;
+				io_str = io_bytes > 0 ? floating_humanizer(io_bytes, true) : "0";
+			}
+
 			// Shorten process thread representation when larger than 5 digits: 10000 -> 10K ...
 			const std::string proc_threads_string = [&] {
 				if (p.threads > 9999) {
@@ -2165,9 +2176,9 @@ namespace Proc {
 			out += (thread_size > 0 ? t_color + rjust(proc_threads_string, thread_size) + ' ' + end : "" )
 				+ g_color + ljust((cmp_greater(p.user.size(), user_size) ? p.user.substr(0, user_size - 1) + '+' : p.user), user_size) + ' '
 				+ m_color + rjust(mem_str, 5) + end + ' '
-				+ (is_selected or is_followed ? "" : Theme::c("inactive_fg")) + (show_graphs ? graph_bg * 5: "")
-				+ (p_graphs.contains(p.pid) ? Mv::l(5) + c_color + p_graphs.at(p.pid)({(p.cpu_p >= 0.1 and p.cpu_p < 5 ? 5ll : (long long)round(p.cpu_p))}, data_same) : "") + end + ' '
-				+ c_color + rjust(cpu_str, 4) + "  " + end;
+				+ (is_selected or is_followed ? "" : Theme::c("inactive_fg")) + (show_graphs and not io_sorting ? graph_bg * 5: "")
+				+ (not io_sorting and p_graphs.contains(p.pid) ? Mv::l(5) + c_color + p_graphs.at(p.pid)({(p.cpu_p >= 0.1 and p.cpu_p < 5 ? 5ll : (long long)round(p.cpu_p))}, data_same) : "") + end + ' '
+				+ c_color + (io_sorting ? rjust(io_str, 9) : rjust(cpu_str, 4) + "  ") + end;
 			if (lc++ > height - 5) break;
 			else if (lc > height - 5 and proc_banner_shown) break;
 		}
