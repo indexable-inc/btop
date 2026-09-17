@@ -1880,6 +1880,9 @@ namespace Proc {
 
 					//? Get threads, mem and cpu usage
 					struct proc_taskinfo pti{};
+					const auto old_io_read = new_proc.io_read;
+					const auto old_io_write = new_proc.io_write;
+					const auto old_io_time = new_proc.io_time;
 					if (sizeof(pti) == proc_pidinfo(new_proc.pid, PROC_PIDTASKINFO, 0, &pti, sizeof(pti))) {
 						new_proc.threads = pti.pti_threadnum;
 						new_proc.mem = pti.pti_resident_size;
@@ -1891,6 +1894,26 @@ namespace Proc {
 						new_proc.threads = 0;
 						new_proc.mem = 0;
 						cpu_t = new_proc.cpu_t;
+					}
+
+					rusage_info_current rusage{};
+					if (proc_pid_rusage(pid, RUSAGE_INFO_CURRENT, (void **)&rusage) == 0) {
+						new_proc.io_read = rusage.ri_diskio_bytesread;
+						new_proc.io_write = rusage.ri_diskio_byteswritten;
+						new_proc.io_time = timeNow;
+						if (no_cache or old_io_time == 0 or timeNow <= old_io_time) {
+							new_proc.io_read_rate = 0;
+							new_proc.io_write_rate = 0;
+						} else {
+							const auto read_delta = new_proc.io_read >= old_io_read ? new_proc.io_read - old_io_read : 0;
+							const auto write_delta = new_proc.io_write >= old_io_write ? new_proc.io_write - old_io_write : 0;
+							const auto elapsed_us = timeNow - old_io_time;
+							new_proc.io_read_rate = static_cast<uint64_t>(static_cast<long double>(read_delta) * 1'000'000 / elapsed_us);
+							new_proc.io_write_rate = static_cast<uint64_t>(static_cast<long double>(write_delta) * 1'000'000 / elapsed_us);
+						}
+					} else {
+						new_proc.io_read_rate = 0;
+						new_proc.io_write_rate = 0;
 					}
 
 					//? Process cpu usage since last update

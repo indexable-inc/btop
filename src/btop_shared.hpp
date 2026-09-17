@@ -390,6 +390,11 @@ namespace Proc {
 		uint64_t mem{};
 		double cpu_p{};         // defaults to = 0.0
 		double cpu_c{};         // defaults to = 0.0
+		uint64_t io_read{};
+		uint64_t io_write{};
+		uint64_t io_read_rate{};
+		uint64_t io_write_rate{};
+		uint64_t io_time{};
 		char state = '0';
 		int64_t p_nice{};
 		uint64_t ppid{};
