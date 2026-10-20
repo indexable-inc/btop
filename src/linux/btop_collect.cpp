@@ -3290,6 +3290,8 @@ namespace Proc {
 			else throw std::runtime_error("Failure to read /proc/stat");
 			pread.close();
 
+			const auto timeNow = time_micros();
+
 			//? Iterate over all pids in /proc
 			for (const auto& d: fs::directory_iterator(Shared::procPath)) {
 				if (Runner::stopping)
@@ -3459,6 +3461,37 @@ namespace Proc {
 					pread >> new_proc.mem;
 					new_proc.mem *= Shared::pageSize;
 					pread.close();
+				}
+
+				//? Disk IO rates from /proc/[pid]/io, which only processes btop may ptrace expose
+				{
+					const auto old_io_read = new_proc.io_read;
+					const auto old_io_write = new_proc.io_write;
+					const auto old_io_time = new_proc.io_time;
+					uint64_t read_bytes = 0, write_bytes = 0;
+					int io_fields = 0;
+					pread.open(d.path() / "io");
+					for (string key; io_fields < 2 and pread >> key;) {
+						if (key == "read_bytes:" and pread >> read_bytes) io_fields++;
+						else if (key == "write_bytes:" and pread >> write_bytes) io_fields++;
+						else pread.ignore(SSmax, '\n');
+					}
+					pread.close();
+					if (io_fields == 2) {
+						new_proc.io_read = read_bytes;
+						new_proc.io_write = write_bytes;
+						new_proc.io_time = timeNow;
+					}
+					if (io_fields < 2 or old_io_time == 0 or timeNow <= old_io_time) {
+						new_proc.io_read_rate = 0;
+						new_proc.io_write_rate = 0;
+					} else {
+						const auto elapsed_us = timeNow - old_io_time;
+						const auto read_delta = read_bytes >= old_io_read ? read_bytes - old_io_read : 0;
+						const auto write_delta = write_bytes >= old_io_write ? write_bytes - old_io_write : 0;
+						new_proc.io_read_rate = static_cast<uint64_t>(static_cast<long double>(read_delta) * 1'000'000 / elapsed_us);
+						new_proc.io_write_rate = static_cast<uint64_t>(static_cast<long double>(write_delta) * 1'000'000 / elapsed_us);
+					}
 				}
 
 				//? Process cpu usage since last update
