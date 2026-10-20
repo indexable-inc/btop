@@ -1332,6 +1332,18 @@ Config and log files stored in `$XDG_CONFIG_HOME/btop` or `$HOME/.config/btop` f
 #* Themes should be placed in "../share/btop/themes" relative to binary or "$HOME/.config/btop/themes"
 color_theme = "Default"
 
+#* "Off" uses color_theme. "Dark" and "Light" use color_theme_dark or color_theme_light.
+#* "Auto" asks the terminal for its background color at startup (OSC 11) and uses color_theme_light on a light
+#* background, color_theme_dark on a dark one. A terminal that does not answer within 500 ms (no OSC 11 support,
+#* tmux that neither answers OSC 11 nor has allow-passthrough on) counts as dark; the log names the reason.
+theme_mode = "Off"
+
+#* Theme for a dark terminal background when theme_mode is "Auto" or "Dark", same names as color_theme.
+color_theme_dark = "Default"
+
+#* Theme for a light terminal background when theme_mode is "Auto" or "Light", same names as color_theme.
+color_theme_light = "Default"
+
 #* If the theme set background should be shown, set to False if you want terminal background transparency.
 theme_background = true
 

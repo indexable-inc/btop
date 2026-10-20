@@ -27,7 +27,9 @@ tab-size = 4
 #include <utility>
 #include <cstdlib>
 
+#include <cerrno>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -179,6 +181,29 @@ namespace Term {
 			cout << mouse_off << clear << Fx::reset << normal_screen << show_cursor << flush;
 			initialized = false;
 		}
+	}
+
+	std::optional<string> query(const string& request, const std::function<bool(std::string_view)>& complete, std::chrono::milliseconds timeout) {
+		//? Relies on init() having turned off echo and canonical mode, so the reply is neither printed nor line buffered
+		if (not initialized) return std::nullopt;
+		cout << request << flush;
+		const auto deadline = std::chrono::steady_clock::now() + timeout;
+		string reply;
+		while (not complete(reply)) {
+			const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+			struct pollfd pfd { .fd = STDIN_FILENO, .events = POLLIN, .revents = 0 };
+			const int ready = (remaining.count() > 0 ? poll(&pfd, 1, static_cast<int>(remaining.count())) : 0);
+			if (ready < 0 and errno == EINTR) continue;
+			std::array<char, 256> buf;
+			const auto bytes = (ready > 0 ? read(STDIN_FILENO, buf.data(), buf.size()) : -1);
+			if (bytes <= 0) {
+				//? Drop a partial reply so it does not reach Input as key presses
+				tcflush(STDIN_FILENO, TCIFLUSH);
+				return std::nullopt;
+			}
+			reply.append(buf.data(), static_cast<size_t>(bytes));
+		}
+		return reply;
 	}
 }
 

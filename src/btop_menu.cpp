@@ -234,6 +234,26 @@ namespace Menu {
 				"",
 				"For theme updates see:",
 				"https://github.com/aristocratos/btop"},
+			{"theme_mode",
+				"Choose the theme from the terminal.",
+				"",
+				"\"Off\" uses Color theme.",
+				"\"Dark\" and \"Light\" use Color theme dark",
+				"or Color theme light.",
+				"",
+				"\"Auto\" asks the terminal for its",
+				"background color at startup and uses the",
+				"light theme on a light background, else",
+				"the dark theme. A terminal that does not",
+				"answer counts as dark."},
+			{"color_theme_dark",
+				"Theme for a dark terminal background.",
+				"",
+				"Used when Theme mode is \"Auto\" or \"Dark\"."},
+			{"color_theme_light",
+				"Theme for a light terminal background.",
+				"",
+				"Used when Theme mode is \"Auto\" or \"Light\"."},
 			{"theme_background",
 				"If the theme set background should be shown.",
 				"",
@@ -1295,6 +1315,11 @@ namespace Menu {
 		return (redraw ? Changed : retval);
 	}
 
+//* Options whose value is a theme name from Theme::themes
+static bool is_theme_option(const string& option) {
+	return is_in(option, "color_theme", "color_theme_dark", "color_theme_light");
+}
+
 static int optionsMenu(const string& key) {
  		enum Predispositions { isBool, isInt, isString, is2D, isBrowsable, isEditable};
 		static int y{};
@@ -1314,6 +1339,9 @@ static int optionsMenu(const string& key) {
 		static bitset<8> selPred;
 		static const std::unordered_map<string, std::reference_wrapper<const vector<string>>> optionsList = {
 			{"color_theme", std::cref(Theme::themes)},
+			{"color_theme_dark", std::cref(Theme::themes)},
+			{"color_theme_light", std::cref(Theme::themes)},
+			{"theme_mode", std::cref(Config::theme_modes)},
 			{"log_level", std::cref(Logger::log_levels)},
 			{"temp_scale", std::cref(Config::temp_scales)},
 		#ifdef __linux__
@@ -1532,7 +1560,7 @@ static int optionsMenu(const string& key) {
 			else if (selPred.test(isBrowsable)) {
 				auto& optList = optionsList.at(option).get();
 				int i = -1;
-				if (option == "color_theme") {
+				if (is_theme_option(option)) {
 					const auto current_theme = Config::getS(option);
 					const auto it = std::ranges::find_if(optList, [&](const auto& p) {
 						return (p == current_theme or fs::path(p).filename().string() == current_theme);
@@ -1547,7 +1575,7 @@ static int optionsMenu(const string& key) {
 				if ((key == "right" or (vim_keys and key == "l")) and ++i >= (int)optList.size()) i = 0;
 				else if ((key == "left" or (vim_keys and key == "h")) and --i < 0) i = optList.size() - 1;
 
-				if (option == "color_theme") {
+				if (is_theme_option(option)) {
 					const auto theme_path = fs::path(optList.at(i));
 					const auto theme_filename = theme_path.filename().string();
 
@@ -1572,6 +1600,11 @@ static int optionsMenu(const string& key) {
 					}
 					else if (option == "base_10_bitrate") {
 						recollect = true;
+					}
+					else if (option == "theme_mode") {
+						//? Auto mode may query the terminal, which must not interleave with a frame being drawn
+						atomic_wait(Runner::active);
+						theme_refresh = true;
 					}
 					else if (is_in(option, "proc_sorting", "cpu_sensor", "show_gpu_info") or option.starts_with("graph_symbol") or option.starts_with("cpu_graph_"))
 						screen_redraw = true;
@@ -1659,13 +1692,13 @@ static int optionsMenu(const string& key) {
 			auto cy = y+9;
 			for (int c = 0, i = max(0, item_height * page); c++ < item_height and i < (int)categories[selected_cat].size(); i++) {
 				const auto& option = categories[selected_cat][i][0];
-				const auto& value = (option == "color_theme" ? fs::path(Config::getS("color_theme")).stem().string() : Config::getAsString(option));
+				const auto& value = (is_theme_option(option) ? fs::path(Config::getS(option)).stem().string() : Config::getAsString(option));
 
 				string idx_str;
 				if (c-1 == selected and selPred.test(isBrowsable)) {
 					const auto& optList = optionsList.at(option).get();
 					int idx = 0;
-					if (option == "color_theme") {
+					if (is_theme_option(option)) {
 						const auto current_theme = Config::getS(option);
 						const auto current_theme_path = fs::path(current_theme);
 						const auto it = std::ranges::find_if(optList, [&](const string& p) {

@@ -16,7 +16,11 @@ indent = tab
 tab-size = 4
 */
 
+#include <cctype>
+#include <charconv>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <unistd.h>
 #include <algorithm>
@@ -448,8 +452,107 @@ namespace Theme {
 
 	}
 
+	std::optional<array<double, 3>> parse_osc11_reply(std::string_view reply) {
+		const auto start = reply.find("\x1b]11;");
+		if (start == std::string_view::npos) return std::nullopt;
+		auto body = reply.substr(start + 5);
+		const auto end = std::min(body.find('\a'), body.find("\x1b\\"));
+		if (end == std::string_view::npos) return std::nullopt;
+		body = body.substr(0, end);
+
+		const bool has_alpha = body.starts_with("rgba:");
+		if (not has_alpha and not body.starts_with("rgb:")) return std::nullopt;
+		body.remove_prefix(has_alpha ? 5 : 4);
+
+		array<double, 3> rgb{};
+		for (auto& component : rgb) {
+			const auto sep = body.find('/');
+			const auto hex = body.substr(0, sep);
+			if (hex.empty() or hex.size() > 4 or not std::ranges::all_of(hex, [](unsigned char ch) { return std::isxdigit(ch) != 0; }))
+				return std::nullopt;
+			unsigned int value{};
+			std::from_chars(hex.data(), hex.data() + hex.size(), value, 16);
+			component = value / static_cast<double>((1u << (4 * hex.size())) - 1);
+			body = (sep == std::string_view::npos ? std::string_view{} : body.substr(sep + 1));
+		}
+		if (not has_alpha and not body.empty()) return std::nullopt;
+		return rgb;
+	}
+
+	double relative_luminance(const array<double, 3>& rgb) {
+		const auto linear = [](double c) { return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4); };
+		return 0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2]);
+	}
+
+	Background classify_background(double luminance) {
+		//? Contrast ratio against black is (L + 0.05) / 0.05 and against white 1.05 / (L + 0.05)
+		return (luminance + 0.05) * (luminance + 0.05) > 1.05 * 0.05 ? Background::Light : Background::Dark;
+	}
+
+	namespace {
+		//? Detected once per run, the terminal is not asked again on resize or config reload
+		std::optional<Background> terminal_background;
+
+		//* True once <reply> holds a primary device attributes reply "ESC [ ? Ps ; ... c"
+		bool has_da1_reply(std::string_view reply) {
+			for (auto pos = reply.find("\x1b[?"); pos != std::string_view::npos; pos = reply.find("\x1b[?", pos + 1)) {
+				const auto end = reply.find_first_not_of("0123456789;", pos + 3);
+				if (end != std::string_view::npos and reply[end] == 'c') return true;
+			}
+			return false;
+		}
+
+		//* Ask the terminal for its background color, a terminal that does not answer counts as dark
+		Background detect_background() {
+			//? Terminals answer in order, so the device attributes query sent after OSC 11 ends the wait as soon as the
+			//? terminal has answered or ignored OSC 11. The timeout only matters for a terminal that answers neither,
+			//? and leaves room for the round trip of an ssh session.
+			constexpr std::chrono::milliseconds timeout{500};
+			const string osc11 = "\x1b]11;?\a";
+			if (not Term::initialized) {
+				Logger::warning("theme_mode Auto: no terminal to ask for its background color, using color_theme_dark");
+				return Background::Dark;
+			}
+			auto reply = Term::query(osc11 + "\x1b[c", has_da1_reply, timeout);
+			auto rgb = (reply ? parse_osc11_reply(*reply) : std::nullopt);
+
+			//? A tmux that does not answer OSC 11 itself gets the query wrapped in DCS passthrough for the outer terminal
+			//? (needs "allow-passthrough on"), without a device attributes query since tmux answers that one itself
+			if (not rgb and std::getenv("TMUX") != nullptr) {
+				Logger::debug("theme_mode Auto: tmux did not answer OSC 11, retrying through DCS passthrough");
+				reply = Term::query("\x1bPtmux;\x1b" + osc11 + "\x1b\\", [](std::string_view r) { return parse_osc11_reply(r).has_value(); }, timeout);
+				rgb = (reply ? parse_osc11_reply(*reply) : std::nullopt);
+			}
+
+			if (not rgb) {
+				Logger::warning("theme_mode Auto: terminal {} its background color (OSC 11), using color_theme_dark",
+					reply ? "did not report" : fmt::format("gave no reply within {} ms to a query for", timeout.count()));
+				return Background::Dark;
+			}
+			const auto luminance = relative_luminance(*rgb);
+			const auto background = classify_background(luminance);
+			Logger::info("theme_mode Auto: terminal background luminance {:.3f}, using color_theme_{}",
+				luminance, background == Background::Light ? "light" : "dark");
+			return background;
+		}
+
+		//* Theme name selected by theme_mode
+		string selected_theme() {
+			const auto& mode = Config::getS("theme_mode");
+			if (mode == "Dark") return Config::getS("color_theme_dark");
+			if (mode == "Light") return Config::getS("color_theme_light");
+			if (mode == "Auto") {
+				if (not terminal_background) terminal_background = detect_background();
+				return Config::getS(*terminal_background == Background::Light ? "color_theme_light" : "color_theme_dark");
+			}
+			return Config::getS("color_theme");
+		}
+	}
+
 	void setTheme() {
-		const auto& theme = Config::getS("color_theme");
+		//? TTY mode forces the TTY theme, so the terminal is never queried there (the Linux console has no OSC 11)
+		const auto tty_mode = Config::getB("tty_mode");
+		const string theme = (tty_mode ? string{"TTY"} : selected_theme());
 		const auto theme_cfg_path = fs::path(theme);
 		fs::path theme_path;
 		for (const fs::path p : themes) {
@@ -459,7 +562,7 @@ namespace Theme {
 				break;
 			}
 		}
-		if (theme == "TTY" or Config::getB("tty_mode"))
+		if (theme == "TTY")
 			generateTTYColors();
 		else {
 			generateColors((theme == "Default" or theme_path.empty() ? Default_theme : loadFile(theme_path)));
