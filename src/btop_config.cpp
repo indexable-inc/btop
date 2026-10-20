@@ -63,6 +63,7 @@ const vector<string> Config::freq_modes = { "first", "range", "lowest", "highest
 const vector<string> Config::show_gpu_values = { "Auto", "On", "Off" };
 #endif
 const vector<string> Config::base_10_bitrate_values = { "Auto", "True", "False" };
+const vector<string> Config::theme_modes = { "Off", "Auto", "Dark", "Light" };
 const vector<string> Config::disable_preset_options = { "Off", "Default", "Custom", "All" };
 
 //* Functions and variables for reading and writing the btop config file
@@ -75,6 +76,15 @@ namespace Config {
 	const vector<array<string, 2>> descriptions = {
 		{"color_theme", 		"#* Name of a btop++/bpytop/bashtop formatted \".theme\" file, \"Default\" and \"TTY\" for builtin themes.\n"
 								"#* Themes should be placed in \"../share/btop/themes\" relative to binary or \"$HOME/.config/btop/themes\""},
+
+		{"theme_mode", 			"#* \"Off\" uses color_theme. \"Dark\" and \"Light\" use color_theme_dark or color_theme_light.\n"
+								"#* \"Auto\" asks the terminal for its background color at startup (OSC 11) and uses color_theme_light on a light\n"
+								"#* background, color_theme_dark on a dark one. A terminal that does not answer within 500 ms (no OSC 11 support,\n"
+								"#* tmux that neither answers OSC 11 nor has allow-passthrough on) counts as dark; the log names the reason."},
+
+		{"color_theme_dark", 	"#* Theme for a dark terminal background when theme_mode is \"Auto\" or \"Dark\", same names as color_theme."},
+
+		{"color_theme_light", 	"#* Theme for a light terminal background when theme_mode is \"Auto\" or \"Light\", same names as color_theme."},
 
 		{"theme_background", 	"#* If the theme set background should be shown, set to False if you want terminal background transparency."},
 
@@ -272,6 +282,9 @@ namespace Config {
 
 	std::unordered_map<std::string_view, string> strings = {
 		{"color_theme", "Default"},
+		{"theme_mode", "Off"},
+		{"color_theme_dark", "Default"},
+		{"color_theme_light", "Default"},
 		{"shown_boxes", "cpu mem net proc"},
 		{"graph_symbol", "braille"},
 		{"disable_presets", "Off"},
@@ -600,6 +613,9 @@ namespace Config {
 	bool stringValid(const std::string_view name, const string& value) {
 		if (name == "log_level" and not v_contains(Logger::log_levels, value))
 			validError = "Invalid log_level: " + value;
+
+		else if (name == "theme_mode" and not v_contains(theme_modes, value))
+			validError = "Invalid theme_mode: " + value;
 
 		else if (name == "graph_symbol" and not v_contains(valid_graph_symbols, value))
 			validError = "Invalid graph symbol identifier: " + value;

@@ -53,6 +53,7 @@ namespace Config {
 	extern const  vector<string> show_gpu_values;
 #endif
     extern const vector<string> base_10_bitrate_values;
+	extern const vector<string> theme_modes;
 	extern vector<string> current_boxes;
 	extern vector<string> preset_list;
 	extern const vector<string> disable_preset_options;

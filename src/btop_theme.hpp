@@ -20,7 +20,9 @@ tab-size = 4
 
 #include <array>
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <unordered_map>
 
@@ -51,8 +53,20 @@ namespace Theme {
 	//* Update list of paths for available themes
 	void updateThemes();
 
-	//* Set current theme from current "color_theme" value in config
+	//* Set current theme from "color_theme", or from "color_theme_dark"/"color_theme_light" as chosen by "theme_mode"
 	void setTheme();
+
+	enum class Background { Dark, Light };
+
+	//* Parse an OSC 11 reply "ESC ] 11 ; rgb:RRRR/GGGG/BBBB" ended by BEL or ST, anywhere in <reply>
+	//* Returns red, green and blue in [0, 1], components may have 1 to 4 hex digits
+	std::optional<array<double, 3>> parse_osc11_reply(std::string_view reply);
+
+	//* WCAG 2 relative luminance of an sRGB color with components in [0, 1]
+	double relative_luminance(const array<double, 3>& rgb);
+
+	//* Light when black text contrasts more than white text against the background (luminance above ~0.179)
+	Background classify_background(double luminance);
 
 	extern std::unordered_map<string, string> colors;
 	extern std::unordered_map<string, array<int, 3>> rgbs;

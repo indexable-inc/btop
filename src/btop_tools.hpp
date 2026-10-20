@@ -30,8 +30,10 @@ tab-size = 4
 #include <cstdint>
 #include <ctime>
 #include <filesystem>
+#include <functional>
 #include <limits.h>
 #include <mutex>
+#include <optional>
 #include <ranges>
 #include <regex>
 #include <string>
@@ -157,6 +159,10 @@ namespace Term {
 
 	//* Restore terminal options
 	void restore();
+
+	//* Write <request> to the terminal and read its reply until <complete> accepts it or <timeout> passes
+	//* Returns an empty optional on timeout or without a terminal, unread reply bytes are then discarded
+	std::optional<string> query(const string& request, const std::function<bool(std::string_view)>& complete, std::chrono::milliseconds timeout);
 }
 
 //? --------------------------------------------------- FUNCTIONS -----------------------------------------------------
